@@ -286,16 +286,21 @@ update_configuration() {
     
     cd "$BJORN_PATH" || exit 1
     
+    # Fix permissions on config directory first
+    chown -R $BJORN_USER:$BJORN_USER "$BJORN_PATH/config" 2>/dev/null || true
+    chmod -R 755 "$BJORN_PATH/config" 2>/dev/null || true
+    
     # Check if shared_config.json exists
     if [ -f "config/shared_config.json" ]; then
         # Backup current config
         cp "config/shared_config.json" "config/shared_config.json.backup"
+        chown $BJORN_USER:$BJORN_USER "config/shared_config.json.backup" 2>/dev/null || true
         
         # Load current config and merge with defaults
         log "INFO" "Merging new configuration options..."
         
-        # Use Python to merge configs (more reliable than sed)
-        python3 << EOF
+        # Use Python to merge configs (more reliable than sed) as bjorn user
+        sudo -u $BJORN_USER python3 << 'PYEOF'
 import json
 import os
 
@@ -327,7 +332,11 @@ with open(config_file, 'w') as f:
     json.dump(current_config, f, indent=4)
 
 print("Configuration updated successfully")
-EOF
+PYEOF
+        
+        # Fix permissions on updated config
+        chown $BJORN_USER:$BJORN_USER "config/shared_config.json" 2>/dev/null || true
+        chmod 644 "config/shared_config.json" 2>/dev/null || true
         
         check_success "Configuration updated"
     else
@@ -341,27 +350,75 @@ regenerate_actions() {
     
     cd "$BJORN_PATH" || exit 1
     
-    # Fix permissions on logs directory first
+    # Fix permissions on config and data directories
+    chown -R $BJORN_USER:$BJORN_USER "$BJORN_PATH/config" 2>/dev/null || true
     chown -R $BJORN_USER:$BJORN_USER "$BJORN_PATH/data" 2>/dev/null || true
+    chmod -R 755 "$BJORN_PATH/config" 2>/dev/null || true
     chmod -R 755 "$BJORN_PATH/data" 2>/dev/null || true
     
     # Run Python to regenerate actions.json as bjorn user
+    # Use a minimal script that doesn't initialize EPD display
     sudo -u $BJORN_USER bash -c "cd '$BJORN_PATH' && python3 << 'PYEOF'
 import sys
 import os
+import json
+import importlib
+
+# Add path
 sys.path.insert(0, '$BJORN_PATH')
-from shared import SharedData
 
 try:
-    shared_data = SharedData()
-    shared_data.generate_actions_json()
-    print('Actions.json regenerated successfully')
+    # Get actions directory
+    actions_dir = os.path.join('$BJORN_PATH', 'actions')
+    actions_file = os.path.join('$BJORN_PATH', 'config', 'actions.json')
+    
+    # Ensure config directory exists
+    os.makedirs(os.path.dirname(actions_file), exist_ok=True)
+    
+    actions_config = []
+    
+    # Scan actions directory
+    for filename in os.listdir(actions_dir):
+        if filename.endswith('.py') and filename != '__init__.py':
+            module_name = filename[:-3]
+            try:
+                module = importlib.import_module(f'actions.{module_name}')
+                b_class = getattr(module, 'b_class', None)
+                b_status = getattr(module, 'b_status', None)
+                b_port = getattr(module, 'b_port', None)
+                b_parent = getattr(module, 'b_parent', None)
+                
+                if b_class and b_status is not None:
+                    actions_config.append({
+                        'b_module': module_name,
+                        'b_class': b_class,
+                        'b_port': b_port,
+                        'b_status': b_status,
+                        'b_parent': b_parent
+                    })
+            except AttributeError as e:
+                print(f'Warning: Module {module_name} missing attributes: {e}')
+            except ImportError as e:
+                print(f'Warning: Error importing {module_name}: {e}')
+            except Exception as e:
+                print(f'Warning: Error processing {module_name}: {e}')
+    
+    # Write actions.json
+    with open(actions_file, 'w') as f:
+        json.dump(actions_config, f, indent=4)
+    
+    print(f'Actions.json regenerated successfully with {len(actions_config)} actions')
+    
 except Exception as e:
     print(f'Error regenerating actions.json: {e}')
     import traceback
     traceback.print_exc()
     sys.exit(1)
 PYEOF"
+    
+    # Fix permissions on generated file
+    chown $BJORN_USER:$BJORN_USER "$BJORN_PATH/config/actions.json" 2>/dev/null || true
+    chmod 644 "$BJORN_PATH/config/actions.json" 2>/dev/null || true
     
     check_success "Actions.json regenerated"
 }
