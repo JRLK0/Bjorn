@@ -21,12 +21,18 @@ VERBOSE=false
 # Global variables
 BJORN_USER="bjorn"
 BJORN_PATH="/home/${BJORN_USER}/Bjorn"
+DEFAULT_REPO="https://github.com/JRLK0/Bjorn.git"
 CURRENT_STEP=0
 TOTAL_STEPS=7
 
 if [[ "$1" == "--help" ]]; then
-    echo "Usage: sudo ./update_bjorn.sh"
+    echo "Usage: sudo ./update_bjorn.sh [REPOSITORY_URL]"
     echo "This script updates an existing BJORN installation."
+    echo ""
+    echo "Options:"
+    echo "  REPOSITORY_URL    Optional. Git repository URL to update from."
+    echo "                    Default: $DEFAULT_REPO"
+    echo ""
     echo "It will:"
     echo "  - Backup current configuration"
     echo "  - Update code from repository"
@@ -34,6 +40,12 @@ if [[ "$1" == "--help" ]]; then
     echo "  - Update configuration files"
     echo "  - Restart BJORN service"
     exit 0
+fi
+
+# Allow custom repository URL as argument
+if [ -n "$1" ] && [[ "$1" != "--help" ]]; then
+    DEFAULT_REPO="$1"
+    log "INFO" "Using custom repository: $DEFAULT_REPO"
 fi
 
 # Function to display progress
@@ -150,9 +162,9 @@ update_code() {
         
         if [ -z "$REMOTE_URL" ]; then
             log "WARNING" "No remote repository configured. Setting default remote..."
-            git remote add origin https://github.com/infinition/Bjorn.git 2>/dev/null || \
-            git remote set-url origin https://github.com/infinition/Bjorn.git
-            REMOTE_URL="https://github.com/infinition/Bjorn.git"
+            git remote add origin "$DEFAULT_REPO" 2>/dev/null || \
+            git remote set-url origin "$DEFAULT_REPO"
+            REMOTE_URL="$DEFAULT_REPO"
         fi
         
         log "INFO" "Updating from repository: $REMOTE_URL"
@@ -160,24 +172,47 @@ update_code() {
         # Fetch latest changes
         git fetch origin
         if [ $? -ne 0 ]; then
-            log "WARNING" "Failed to fetch from origin, trying to set remote..."
-            git remote set-url origin https://github.com/infinition/Bjorn.git
+            log "WARNING" "Failed to fetch from origin, trying to set remote to default..."
+            git remote set-url origin "$DEFAULT_REPO"
             git fetch origin
         fi
         
-        # Get current branch
-        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
-        log "INFO" "Current branch: $CURRENT_BRANCH"
+        # Get current branch (where the script is being executed)
+        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
         
-        # Pull latest changes
-        git pull origin "$CURRENT_BRANCH" || git pull origin main || git pull origin master
-        check_success "Code updated from git repository ($REMOTE_URL)"
+        if [ -z "$CURRENT_BRANCH" ]; then
+            # Try alternative method to get branch name
+            CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+        fi
+        
+        if [ -z "$CURRENT_BRANCH" ]; then
+            log "WARNING" "Could not detect current branch, trying default branches..."
+            # Try common branch names
+            git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || {
+                log "ERROR" "Failed to pull from repository. Please check your branch and remote configuration."
+                return 1
+            }
+        else
+            log "INFO" "Detected current branch: $CURRENT_BRANCH"
+            log "INFO" "Updating from branch: $CURRENT_BRANCH"
+            
+            # Pull latest changes from the current branch
+            git pull origin "$CURRENT_BRANCH"
+            if [ $? -ne 0 ]; then
+                log "WARNING" "Failed to pull from branch $CURRENT_BRANCH, trying to set upstream..."
+                # Set upstream if not set
+                git branch --set-upstream-to=origin/"$CURRENT_BRANCH" "$CURRENT_BRANCH" 2>/dev/null
+                git pull origin "$CURRENT_BRANCH"
+            fi
+        fi
+        
+        check_success "Code updated from git repository ($REMOTE_URL, branch: ${CURRENT_BRANCH:-unknown})"
     else
         log "WARNING" "Not a git repository. This installation was not cloned from git."
-        log "INFO" "To enable automatic updates, consider cloning from: https://github.com/infinition/Bjorn.git"
+        log "INFO" "To enable automatic updates, consider cloning from: $DEFAULT_REPO"
         echo -e "${YELLOW}This installation is not a git repository.${NC}"
         echo -e "${YELLOW}Automatic code update skipped.${NC}"
-        echo -e "${YELLOW}To enable updates, reinstall using: git clone https://github.com/infinition/Bjorn.git${NC}"
+        echo -e "${YELLOW}To enable updates, reinstall using: git clone $DEFAULT_REPO${NC}"
         return 0
     fi
 }
