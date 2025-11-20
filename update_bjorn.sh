@@ -151,6 +151,19 @@ backup_configuration() {
 update_code() {
     log "INFO" "Updating BJORN code..."
     
+    # First, detect the branch from the directory where script is being executed
+    # This allows testing from any directory
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Check if script is in a git repo (for testing/development)
+    if [ -d "$SCRIPT_DIR/.git" ]; then
+        cd "$SCRIPT_DIR" || exit 1
+        log "INFO" "Script is in a git repository, detecting branch from script location..."
+        SCRIPT_BRANCH=$(git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD 2>/dev/null)
+        log "INFO" "Detected branch from script location: ${SCRIPT_BRANCH:-unknown}"
+    fi
+    
+    # Now go to the actual BJORN installation directory
     cd "$BJORN_PATH" || exit 1
     
     # Check if it's a git repository
@@ -177,12 +190,25 @@ update_code() {
             git fetch origin
         fi
         
-        # Get current branch (where the script is being executed)
+        # Get current branch from the installation directory
         CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
         
         if [ -z "$CURRENT_BRANCH" ]; then
             # Try alternative method to get branch name
             CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+        fi
+        
+        # If we detected a branch from script location and it's different, use that
+        if [ -n "$SCRIPT_BRANCH" ] && [ "$SCRIPT_BRANCH" != "$CURRENT_BRANCH" ]; then
+            log "INFO" "Script is in branch '$SCRIPT_BRANCH', switching installation to that branch..."
+            # Checkout the branch from script location
+            git checkout "$SCRIPT_BRANCH" 2>/dev/null || {
+                log "INFO" "Branch $SCRIPT_BRANCH doesn't exist locally, creating tracking branch..."
+                git checkout -b "$SCRIPT_BRANCH" "origin/$SCRIPT_BRANCH" 2>/dev/null || {
+                    log "WARNING" "Could not switch to branch $SCRIPT_BRANCH, using current branch"
+                }
+            }
+            CURRENT_BRANCH="$SCRIPT_BRANCH"
         fi
         
         if [ -z "$CURRENT_BRANCH" ]; then
@@ -193,7 +219,7 @@ update_code() {
                 return 1
             }
         else
-            log "INFO" "Detected current branch: $CURRENT_BRANCH"
+            log "INFO" "Using branch: $CURRENT_BRANCH"
             log "INFO" "Updating from branch: $CURRENT_BRANCH"
             
             # Pull latest changes from the current branch
