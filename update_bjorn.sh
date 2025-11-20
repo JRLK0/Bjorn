@@ -23,7 +23,7 @@ BJORN_USER="bjorn"
 BJORN_PATH="/home/${BJORN_USER}/Bjorn"
 DEFAULT_REPO="https://github.com/JRLK0/Bjorn.git"
 CURRENT_STEP=0
-TOTAL_STEPS=7
+TOTAL_STEPS=8
 
 if [[ "$1" == "--help" ]]; then
     echo "Usage: sudo ./update_bjorn.sh [REPOSITORY_URL]"
@@ -423,6 +423,31 @@ PYEOF"
     check_success "Actions.json regenerated"
 }
 
+# Fix script permissions
+fix_script_permissions() {
+    log "INFO" "Fixing script permissions..."
+    
+    cd "$BJORN_PATH" || exit 1
+    
+    # Fix permissions on executable scripts
+    if [ -f "kill_port_8000.sh" ]; then
+        chmod +x "kill_port_8000.sh"
+        chown $BJORN_USER:$BJORN_USER "kill_port_8000.sh" 2>/dev/null || true
+        log "INFO" "Fixed permissions on kill_port_8000.sh"
+    fi
+    
+    if [ -f "update_bjorn.sh" ]; then
+        chmod +x "update_bjorn.sh"
+        chown $BJORN_USER:$BJORN_USER "update_bjorn.sh" 2>/dev/null || true
+    fi
+    
+    # Fix permissions on all .sh files
+    find "$BJORN_PATH" -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true
+    find "$BJORN_PATH" -name "*.sh" -type f -exec chown $BJORN_USER:$BJORN_USER {} \; 2>/dev/null || true
+    
+    check_success "Script permissions fixed"
+}
+
 # Restart BJORN service
 restart_service() {
     log "INFO" "Restarting BJORN service..."
@@ -541,6 +566,10 @@ main() {
     # Regenerate actions
     show_progress "Regenerating actions.json"
     regenerate_actions || exit 1
+    
+    # Fix script permissions
+    show_progress "Fixing script permissions"
+    fix_script_permissions || exit 1
     
     # Restart service
     show_progress "Restarting BJORN service"
