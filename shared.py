@@ -73,6 +73,7 @@ class SharedData:
         self.zombiesdir = os.path.join(self.output_dir, 'zombies')
         self.vulnerabilities_dir = os.path.join(self.output_dir, 'vulnerabilities')
         self.scan_results_dir = os.path.join(self.output_dir, "scan_results")
+        self.handshakes_dir = os.path.join(self.output_dir, 'handshakes')
         # Directories under resourcesdir
         self.picdir = os.path.join(self.resourcesdir, 'images')
         self.fontdir = os.path.join(self.resourcesdir, 'fonts')
@@ -156,6 +157,13 @@ class SharedData:
             "nmap_scan_aggressivity": "-T2",
             "portstart": 1,
             "portend": 2,
+            
+            "__title_wifi_handshake__": "WiFi Handshake Capture",
+            "wifi_handshake_enabled": True,
+            "wifi_handshake_interval": 300,
+            "wifi_handshake_duration": 60,
+            "wifi_handshake_scan_duration": 10,
+            "wifi_interface": "wlan0",
             
             "__title_timewaits__": "Time Wait Settings",
             "timewait_smb": 0,
@@ -284,6 +292,7 @@ class SharedData:
         self.wifi_connected = False
         self.pan_connected = False
         self.usb_active = False
+        self.wifi_handshake_mode = False
         self.bjornsays = "Hacking away..."
         self.bjornorch_status = "IDLE"
         self.bjornstatustext = "IDLE"

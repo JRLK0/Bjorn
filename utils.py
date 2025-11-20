@@ -811,5 +811,79 @@ method=auto
             handler.end_headers()
             handler.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
 
+    def serve_handshakes_data(self, handler):
+        """Serve handshakes metadata and list of captured handshakes."""
+        try:
+            handshakes_dir = self.shared_data.handshakes_dir
+            metadata_file = os.path.join(handshakes_dir, 'handshakes_metadata.csv')
+            
+            handshakes_data = []
+            if os.path.exists(metadata_file):
+                with open(metadata_file, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        handshakes_data.append(row)
+            
+            # Also get list of .cap files
+            cap_files = []
+            if os.path.exists(handshakes_dir):
+                for file in os.listdir(handshakes_dir):
+                    if file.endswith('.cap'):
+                        file_path = os.path.join(handshakes_dir, file)
+                        file_size = os.path.getsize(file_path)
+                        file_date = datetime.fromtimestamp(os.path.getmtime(file_path)).strftime("%Y-%m-%d %H:%M:%S")
+                        cap_files.append({
+                            "filename": file,
+                            "size": file_size,
+                            "date": file_date
+                        })
+            
+            response_data = {
+                "handshakes": handshakes_data,
+                "cap_files": cap_files
+            }
+            
+            handler.send_response(200)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(json.dumps(response_data).encode('utf-8'))
+        except Exception as e:
+            handler.send_response(500)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+            self.logger.error(f"Error serving handshakes data: {e}")
+
+    def download_handshake(self, handler):
+        """Download a captured handshake file."""
+        try:
+            query = unquote(handler.path.split('?file=')[1])
+            file_path = os.path.join(self.shared_data.handshakes_dir, query)
+            
+            # Security check: ensure file is within handshakes directory
+            real_path = os.path.realpath(file_path)
+            real_handshakes_dir = os.path.realpath(self.shared_data.handshakes_dir)
+            if not real_path.startswith(real_handshakes_dir):
+                handler.send_response(403)
+                handler.end_headers()
+                return
+            
+            if os.path.isfile(file_path) and file_path.endswith('.cap'):
+                handler.send_response(200)
+                handler.send_header("Content-type", "application/octet-stream")
+                handler.send_header("Content-Disposition", f'attachment; filename="{os.path.basename(file_path)}"')
+                handler.end_headers()
+                with open(file_path, 'rb') as file:
+                    handler.wfile.write(file.read())
+            else:
+                handler.send_response(404)
+                handler.end_headers()
+        except Exception as e:
+            handler.send_response(500)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+            self.logger.error(f"Error downloading handshake: {e}")
+
 
 

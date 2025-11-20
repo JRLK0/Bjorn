@@ -245,11 +245,20 @@ class Orchestrator:
 
     def run(self):
         """Run the orchestrator cycle to execute actions"""
-        #Run the scanner a first time to get the initial data
-        self.shared_data.bjornorch_status = "NetworkScanner"
-        self.shared_data.bjornstatustext2 = "First scan..."
-        self.network_scanner.scan()
-        self.shared_data.bjornstatustext2 = ""
+        # Check if we're in handshake mode (no WiFi connected)
+        handshake_mode = getattr(self.shared_data, 'wifi_handshake_mode', False)
+        
+        if not handshake_mode:
+            # Normal mode: Run the scanner a first time to get the initial data
+            if self.network_scanner:
+                self.shared_data.bjornorch_status = "NetworkScanner"
+                self.shared_data.bjornstatustext2 = "First scan..."
+                self.network_scanner.scan()
+                self.shared_data.bjornstatustext2 = ""
+        else:
+            # Handshake mode: Skip network scanner, go directly to standalone actions
+            logger.info("Running in WiFi handshake capture mode (no WiFi connection)")
+        
         while not self.shared_data.orchestrator_should_exit:
             current_data = self.shared_data.read_data()
             any_action_executed = False
@@ -295,6 +304,37 @@ class Orchestrator:
             self.shared_data.write_data(current_data)
 
             if not any_action_executed:
+                # Check if we're in handshake mode
+                handshake_mode = getattr(self.shared_data, 'wifi_handshake_mode', False)
+                
+                if handshake_mode:
+                    # In handshake mode, execute standalone actions (handshake capture)
+                    logger.info("Handshake mode: Executing standalone actions...")
+                    current_data = self.shared_data.read_data()
+                    for action in self.standalone_actions:
+                        if action.action_name == "WifiHandshakeCapture":
+                            with self.semaphore:
+                                if self.execute_standalone_action(action, current_data):
+                                    self.failed_scans_count = 0
+                                    break
+                    
+                    # Wait for next interval
+                    handshake_interval = getattr(self.shared_data, 'wifi_handshake_interval', 300)
+                    idle_start_time = datetime.now()
+                    idle_end_time = idle_start_time + timedelta(seconds=handshake_interval)
+                    while datetime.now() < idle_end_time:
+                        if self.shared_data.orchestrator_should_exit:
+                            break
+                        remaining_time = (idle_end_time - datetime.now()).seconds
+                        self.shared_data.bjornorch_status = "IDLE"
+                        self.shared_data.bjornstatustext2 = f"Next capture in: {remaining_time}s"
+                        sys.stdout.write('\x1b[1A\x1b[2K')
+                        logger.info(f"Next handshake capture in: {remaining_time} seconds")
+                        time.sleep(1)
+                    self.failed_scans_count = 0
+                    continue
+                
+                # Normal mode: Run network scan
                 self.shared_data.bjornorch_status = "IDLE"
                 self.shared_data.bjornstatustext2 = ""
                 logger.info("No available targets. Running network scan...")

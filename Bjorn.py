@@ -54,14 +54,24 @@ class Bjorn:
 
 
     def check_and_start_orchestrator(self):
-        """Check Wi-Fi and start the orchestrator if connected."""
+        """Check Wi-Fi and start the orchestrator if connected or if handshake mode is enabled."""
         if self.is_wifi_connected():
             self.wifi_connected = True
+            # Reset handshake mode if WiFi is connected
+            self.shared_data.wifi_handshake_mode = False
             if self.orchestrator_thread is None or not self.orchestrator_thread.is_alive():
                 self.start_orchestrator()
         else:
             self.wifi_connected = False
-            logger.info("Waiting for Wi-Fi connection to start Orchestrator...")
+            # Check if WiFi handshake capture is enabled
+            wifi_handshake_enabled = getattr(self.shared_data, 'wifi_handshake_enabled', False)
+            if wifi_handshake_enabled:
+                # Allow orchestrator to run in handshake mode even without WiFi
+                if self.orchestrator_thread is None or not self.orchestrator_thread.is_alive():
+                    logger.info("WiFi not connected, starting Orchestrator in handshake capture mode...")
+                    self.start_orchestrator_handshake_mode()
+            else:
+                logger.info("Waiting for Wi-Fi connection to start Orchestrator...")
 
     def start_orchestrator(self):
         """Start the orchestrator thread."""
@@ -79,6 +89,24 @@ class Bjorn:
                 logger.info("Orchestrator thread is already running.")
         else:
             logger.warning("Cannot start Orchestrator: Wi-Fi is not connected.")
+    
+    def start_orchestrator_handshake_mode(self):
+        """Start the orchestrator thread in handshake capture mode (without WiFi connection)."""
+        wifi_handshake_enabled = getattr(self.shared_data, 'wifi_handshake_enabled', False)
+        if wifi_handshake_enabled:
+            if self.orchestrator_thread is None or not self.orchestrator_thread.is_alive():
+                logger.info("Starting Orchestrator thread in handshake capture mode...")
+                self.shared_data.orchestrator_should_exit = False
+                self.shared_data.manual_mode = False
+                self.shared_data.wifi_handshake_mode = True  # Set handshake mode flag
+                self.orchestrator = Orchestrator()
+                self.orchestrator_thread = threading.Thread(target=self.orchestrator.run)
+                self.orchestrator_thread.start()
+                logger.info("Orchestrator thread started in handshake capture mode.")
+            else:
+                logger.info("Orchestrator thread is already running.")
+        else:
+            logger.warning("Cannot start Orchestrator in handshake mode: WiFi handshake capture is disabled.")
 
     def stop_orchestrator(self):
         """Stop the orchestrator thread."""

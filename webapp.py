@@ -112,6 +112,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.web_utils.download_file(self)
         elif self.path.startswith('/download_backup'):
             self.web_utils.download_backup(self)
+        elif self.path == '/handshakes_data':
+            self.web_utils.serve_handshakes_data(self)
+        elif self.path.startswith('/download_handshake'):
+            self.web_utils.download_handshake(self)
         else:
             super().do_GET()
 
