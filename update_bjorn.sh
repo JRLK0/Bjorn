@@ -427,21 +427,38 @@ PYEOF"
 restart_service() {
     log "INFO" "Restarting BJORN service..."
     
-    if systemctl is-active --quiet bjorn.service; then
-        systemctl restart bjorn.service
-        sleep 2
-        
-        if systemctl is-active --quiet bjorn.service; then
-            log "SUCCESS" "BJORN service restarted successfully"
-            echo -e "${GREEN}BJORN service restarted${NC}"
-        else
-            log "ERROR" "BJORN service failed to start"
-            echo -e "${RED}BJORN service failed to start. Check logs with: sudo journalctl -u bjorn.service${NC}"
-            systemctl status bjorn.service
-        fi
+    # Check if service exists
+    if ! systemctl list-unit-files | grep -q "bjorn.service"; then
+        log "WARNING" "BJORN service not found. Service may need to be created."
+        echo -e "${YELLOW}BJORN service not found. You may need to run the installation script first.${NC}"
+        return 0
+    fi
+    
+    # Check if service is active
+    if systemctl is-active --quiet bjorn.service 2>/dev/null; then
+        log "INFO" "Stopping BJORN service..."
+        systemctl stop bjorn.service
+        sleep 1
+    fi
+    
+    # Start the service
+    log "INFO" "Starting BJORN service..."
+    systemctl start bjorn.service
+    
+    # Wait a moment for service to start
+    sleep 3
+    
+    # Check status with timeout
+    if systemctl is-active --quiet bjorn.service 2>/dev/null; then
+        log "SUCCESS" "BJORN service restarted successfully"
+        echo -e "${GREEN}BJORN service restarted${NC}"
+        systemctl status bjorn.service --no-pager -l | head -n 10
     else
-        log "WARNING" "BJORN service is not running"
-        echo -e "${YELLOW}BJORN service is not running. Start it with: sudo systemctl start bjorn.service${NC}"
+        log "WARNING" "BJORN service may not have started properly"
+        echo -e "${YELLOW}BJORN service status unclear. Check with: sudo systemctl status bjorn.service${NC}"
+        echo -e "${YELLOW}Or view logs with: sudo journalctl -u bjorn.service -n 50${NC}"
+        # Don't fail the update if service restart has issues
+        return 0
     fi
 }
 
