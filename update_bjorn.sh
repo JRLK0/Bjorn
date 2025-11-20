@@ -488,6 +488,21 @@ verify_update() {
         log "WARNING" "Python syntax check failed"
     fi
     
+    # Check service status and show recent errors if any
+    if systemctl is-failed --quiet bjorn.service 2>/dev/null; then
+        log "WARNING" "BJORN service is in failed state"
+        echo -e "${YELLOW}Service failed to start. Recent errors:${NC}"
+        journalctl -u bjorn.service -n 20 --no-pager 2>/dev/null | tail -n 10 || true
+        echo ""
+        echo -e "${YELLOW}To diagnose the issue, run:${NC}"
+        echo -e "  sudo systemctl status bjorn.service"
+        echo -e "  sudo journalctl -u bjorn.service -n 50"
+    elif systemctl is-active --quiet bjorn.service 2>/dev/null; then
+        log "SUCCESS" "BJORN service is running"
+    else
+        log "INFO" "BJORN service status unknown"
+    fi
+    
     echo -e "${GREEN}Update verification completed${NC}"
 }
 
