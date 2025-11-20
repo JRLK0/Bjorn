@@ -151,16 +151,20 @@ backup_configuration() {
 update_code() {
     log "INFO" "Updating BJORN code..."
     
-    # First, detect the branch from the directory where script is being executed
-    # This allows testing from any directory
+    # First, detect the branch and remote from the directory where script is being executed
+    # This allows testing from any directory and uses the correct fork
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    SCRIPT_BRANCH=""
+    SCRIPT_REMOTE=""
     
     # Check if script is in a git repo (for testing/development)
     if [ -d "$SCRIPT_DIR/.git" ]; then
         cd "$SCRIPT_DIR" || exit 1
-        log "INFO" "Script is in a git repository, detecting branch from script location..."
+        log "INFO" "Script is in a git repository, detecting branch and remote from script location..."
         SCRIPT_BRANCH=$(git branch --show-current 2>/dev/null || git rev-parse --abbrev-ref HEAD 2>/dev/null)
+        SCRIPT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
         log "INFO" "Detected branch from script location: ${SCRIPT_BRANCH:-unknown}"
+        log "INFO" "Detected remote from script location: ${SCRIPT_REMOTE:-unknown}"
     fi
     
     # Now go to the actual BJORN installation directory
@@ -170,10 +174,16 @@ update_code() {
     if [ -d ".git" ]; then
         log "INFO" "Detected git repository, checking remote..."
         
-        # Get the remote URL
+        # Get the remote URL from installation
         REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
         
-        if [ -z "$REMOTE_URL" ]; then
+        # If script has a remote and it's different, use the script's remote (the fork)
+        if [ -n "$SCRIPT_REMOTE" ] && [ "$SCRIPT_REMOTE" != "$REMOTE_URL" ]; then
+            log "INFO" "Script remote ($SCRIPT_REMOTE) differs from installation remote ($REMOTE_URL)"
+            log "INFO" "Updating installation remote to match script remote (your fork)..."
+            git remote set-url origin "$SCRIPT_REMOTE"
+            REMOTE_URL="$SCRIPT_REMOTE"
+        elif [ -z "$REMOTE_URL" ]; then
             log "WARNING" "No remote repository configured. Setting default remote..."
             git remote add origin "$DEFAULT_REPO" 2>/dev/null || \
             git remote set-url origin "$DEFAULT_REPO"
@@ -185,8 +195,12 @@ update_code() {
         # Fetch latest changes
         git fetch origin
         if [ $? -ne 0 ]; then
-            log "WARNING" "Failed to fetch from origin, trying to set remote to default..."
-            git remote set-url origin "$DEFAULT_REPO"
+            log "WARNING" "Failed to fetch from origin, trying to set remote..."
+            if [ -n "$SCRIPT_REMOTE" ]; then
+                git remote set-url origin "$SCRIPT_REMOTE"
+            else
+                git remote set-url origin "$DEFAULT_REPO"
+            fi
             git fetch origin
         fi
         
