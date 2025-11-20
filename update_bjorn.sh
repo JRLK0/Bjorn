@@ -143,25 +143,42 @@ update_code() {
     
     # Check if it's a git repository
     if [ -d ".git" ]; then
-        log "INFO" "Updating from git repository..."
-        git fetch origin
-        git pull origin main || git pull origin master
-        check_success "Code updated from git repository"
-    else
-        log "WARNING" "Not a git repository. Downloading latest version..."
-        # Create backup of current directory
-        cd /home/$BJORN_USER || exit 1
-        mv Bjorn "Bjorn_old_$(date +%Y%m%d_%H%M%S)"
+        log "INFO" "Detected git repository, checking remote..."
         
-        # Clone fresh copy
-        git clone https://github.com/infinition/Bjorn.git
-        check_success "Downloaded latest version"
+        # Get the remote URL
+        REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
         
-        # Restore configuration
-        if [ -d "Bjorn_old_*/config" ]; then
-            cp -r Bjorn_old_*/config/* Bjorn/config/ 2>/dev/null
-            log "INFO" "Restored configuration files"
+        if [ -z "$REMOTE_URL" ]; then
+            log "WARNING" "No remote repository configured. Setting default remote..."
+            git remote add origin https://github.com/infinition/Bjorn.git 2>/dev/null || \
+            git remote set-url origin https://github.com/infinition/Bjorn.git
+            REMOTE_URL="https://github.com/infinition/Bjorn.git"
         fi
+        
+        log "INFO" "Updating from repository: $REMOTE_URL"
+        
+        # Fetch latest changes
+        git fetch origin
+        if [ $? -ne 0 ]; then
+            log "WARNING" "Failed to fetch from origin, trying to set remote..."
+            git remote set-url origin https://github.com/infinition/Bjorn.git
+            git fetch origin
+        fi
+        
+        # Get current branch
+        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
+        log "INFO" "Current branch: $CURRENT_BRANCH"
+        
+        # Pull latest changes
+        git pull origin "$CURRENT_BRANCH" || git pull origin main || git pull origin master
+        check_success "Code updated from git repository ($REMOTE_URL)"
+    else
+        log "WARNING" "Not a git repository. This installation was not cloned from git."
+        log "INFO" "To enable automatic updates, consider cloning from: https://github.com/infinition/Bjorn.git"
+        echo -e "${YELLOW}This installation is not a git repository.${NC}"
+        echo -e "${YELLOW}Automatic code update skipped.${NC}"
+        echo -e "${YELLOW}To enable updates, reinstall using: git clone https://github.com/infinition/Bjorn.git${NC}"
+        return 0
     fi
 }
 
