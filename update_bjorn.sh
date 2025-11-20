@@ -341,20 +341,27 @@ regenerate_actions() {
     
     cd "$BJORN_PATH" || exit 1
     
-    # Run Python to regenerate actions.json
-    sudo -u $BJORN_USER python3 << EOF
+    # Fix permissions on logs directory first
+    chown -R $BJORN_USER:$BJORN_USER "$BJORN_PATH/data" 2>/dev/null || true
+    chmod -R 755 "$BJORN_PATH/data" 2>/dev/null || true
+    
+    # Run Python to regenerate actions.json as bjorn user
+    sudo -u $BJORN_USER bash -c "cd '$BJORN_PATH' && python3 << 'PYEOF'
 import sys
-sys.path.insert(0, '/home/bjorn/Bjorn')
+import os
+sys.path.insert(0, '$BJORN_PATH')
 from shared import SharedData
 
 try:
     shared_data = SharedData()
     shared_data.generate_actions_json()
-    print("Actions.json regenerated successfully")
+    print('Actions.json regenerated successfully')
 except Exception as e:
-    print(f"Error regenerating actions.json: {e}")
+    print(f'Error regenerating actions.json: {e}')
+    import traceback
+    traceback.print_exc()
     sys.exit(1)
-EOF
+PYEOF"
     
     check_success "Actions.json regenerated"
 }
